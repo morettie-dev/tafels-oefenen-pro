@@ -427,7 +427,13 @@ function practiceWrongs() {
     alert('Top! Geen fouten om te oefenen.');
     return;
   }
-  gameState.questions = gameState.wrongs.slice();
+
+  const currentWrongs = gameState.wrongs.slice();
+
+  // Leeg de foutenlijst zodat alleen nieuwe fouten worden bijgehouden
+  gameState.wrongs = [];
+
+  gameState.questions = currentWrongs;
   prepareQuizSessionFromQuestions('wrongs');
   showScreen('quizScreen');
   loadQuestion();
