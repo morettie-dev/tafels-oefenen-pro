@@ -101,15 +101,49 @@ function updateHardButtonState() {
 }
 
 // ==============================
+// Session helpers
+// ==============================
+function enableQuizControls() {
+  const input = document.getElementById('answerInput');
+  const btn = document.getElementById('checkBtn');
+  if (input) input.disabled = false;
+  if (btn) btn.disabled = false;
+}
+
+function initTablePerformanceForQuestions() {
+  gameState.tablePerformance = {};
+  gameState.questions.forEach(q => {
+    if (!gameState.tablePerformance[q.table]) {
+      gameState.tablePerformance[q.table] = { correct: 0, total: 0 };
+    }
+  });
+}
+
+function prepareQuizSessionFromQuestions(mode) {
+  gameState.lastMode = mode;
+  gameState.currentQuestionIndex = 0;
+  gameState.correct = 0;
+  gameState.incorrect = 0;
+  gameState.sessionLength = gameState.questions.length;
+  initTablePerformanceForQuestions();
+  enableQuizControls();
+}
+
+// ==============================
 // Start flows
 // ==============================
 function startQuick() { startGame(20, 'random'); }
 function startLong()  { startGame(40, 'random'); }
 function startSystematic() { startGame(null, 'systematic'); }
 function startHard()  {
-  gameState.lastMode = 'hard';
+  const name = document.getElementById('playerName').value.trim() || localStorage.getItem('playerName') || '';
+  if (!name) { alert('Vul alsjeblieft je naam in! 📝'); return; }
+  gameState.playerName = name;
+  localStorage.setItem('playerName', name);
+
   const ok = generateHardOnes();
   if (!ok) return;
+  prepareQuizSessionFromQuestions('hard');
   showScreen('quizScreen');
   loadQuestion();
 }
@@ -210,6 +244,15 @@ function generateHardOnes(limit = 20) {
 // ==============================
 function loadQuestion() {
   const q = gameState.questions[gameState.currentQuestionIndex];
+  if (!q) {
+    showResults();
+    return;
+  }
+
+  // Belangrijk: na het einde van een vorige oefening stonden deze controls nog disabled.
+  // Daarom altijd expliciet herstellen bij iedere nieuwe vraag/sessie.
+  enableQuizControls();
+
   document.getElementById('question').textContent = `${q.multiplier} × ${q.table} = ?`;
   document.getElementById('questionNumber').textContent = gameState.currentQuestionIndex + 1;
   document.getElementById('totalQuestions').textContent = gameState.sessionLength;
@@ -227,9 +270,23 @@ function loadQuestion() {
 }
 
 function checkAnswer() {
-  const ansStr = document.getElementById('answerInput').value;
+  const input = document.getElementById('answerInput');
+  const checkBtn = document.getElementById('checkBtn');
+  if (input.disabled || checkBtn.disabled) return;
+
+  const ansStr = input.value.trim();
+  if (ansStr === '') {
+    input.focus();
+    return;
+  }
+
   const answer = parseInt(ansStr, 10);
   const q = gameState.questions[gameState.currentQuestionIndex];
+  if (!q) return;
+
+  if (!gameState.tablePerformance[q.table]) {
+    gameState.tablePerformance[q.table] = { correct: 0, total: 0 };
+  }
 
   const key = `${q.table}-${q.multiplier}`;
   const h = (gameState.hard[key] ||= { attempts: 0, wrongs: 0 });
@@ -248,18 +305,17 @@ function checkAnswer() {
     showFeedback(false, q.answer);
     playSound(false);
   }
+
   gameState.tablePerformance[q.table].total++;
 
   // disable check tijdens overgang
-  document.getElementById('answerInput').disabled = true;
-  document.getElementById('checkBtn').disabled = true;
+  input.disabled = true;
+  checkBtn.disabled = true;
 
   setTimeout(() => {
     if (gameState.currentQuestionIndex < gameState.sessionLength - 1) {
       gameState.currentQuestionIndex++;
       loadQuestion();
-      document.getElementById('answerInput').disabled = false;
-      document.getElementById('checkBtn').disabled = false;
       document.getElementById('answerInput').focus();
     } else {
       showResults();
@@ -328,7 +384,7 @@ function showResults() {
   localStorage.setItem('hardDict', JSON.stringify(gameState.hard));
   updateHardButtonState();
 
-  const percentage = Math.round((gameState.correct / gameState.sessionLength) * 100);
+  const percentage = gameState.sessionLength > 0 ? Math.round((gameState.correct / gameState.sessionLength) * 100) : 0;
   const emojis = {
     100: '😍 PERFECT!',
     90: '🤩 GEWELDIG!',
@@ -371,12 +427,8 @@ function practiceWrongs() {
     alert('Top! Geen fouten om te oefenen.');
     return;
   }
-  const wr = gameState.wrongs.slice();
-  gameState.questions = wr;
-  gameState.sessionLength = wr.length;
-  gameState.currentQuestionIndex = 0;
-  gameState.correct = 0;
-  gameState.incorrect = 0;
+  gameState.questions = gameState.wrongs.slice();
+  prepareQuizSessionFromQuestions('wrongs');
   showScreen('quizScreen');
   loadQuestion();
 }
@@ -419,6 +471,7 @@ function playAgain() {
   const mode = gameState.lastMode || 'random';
   if (mode === 'hard') { return startHard(); }
   if (mode === 'systematic') { return startSystematic(); }
+  if (mode === 'wrongs') { return practiceWrongs(); }
   // standaard: herstart met zelfde lengte
   startGame(gameState.sessionLength, 'random');
 }
