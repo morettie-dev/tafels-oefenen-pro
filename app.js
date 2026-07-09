@@ -187,18 +187,80 @@ function startGame(length, mode = 'random') {
 // ==============================
 function generateQuestions() {
   gameState.questions = [];
-  const tables = gameState.selectedTables;
-  let last = null;
-  for (let i = 0; i < gameState.sessionLength; i++) {
-    let q;
-    do {
-      const table = tables[Math.floor(Math.random() * tables.length)];
-      const multiplier = Math.floor(Math.random() * 10) + 1;
-      q = { table, multiplier, answer: table * multiplier };
-    } while (last && q.table === last.table && q.multiplier === last.multiplier);
-    gameState.questions.push(q);
-    last = q;
+
+  const tables = [...gameState.selectedTables].sort((a, b) => a - b);
+  const allKeys = [];
+
+  // Maak alle mogelijke sommen voor de gekozen tafels
+  for (const table of tables) {
+    for (let multiplier = 1; multiplier <= 10; multiplier++) {
+      allKeys.push(`${table}-${multiplier}`);
+    }
   }
+
+  const signature = tables.join(',');
+  const storageKey = 'tafelsQuestionPoolV1';
+
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  let saved = null;
+
+  try {
+    saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+  } catch {
+    saved = null;
+  }
+
+  // Nieuwe vragenpot maken als:
+  // - er nog geen pot is
+  // - de gekozen tafels anders zijn dan vorige keer
+  // - de opgeslagen pot ongeldig is
+  if (!saved || saved.signature !== signature || !Array.isArray(saved.pool)) {
+    saved = {
+      signature,
+      pool: shuffle(allKeys.slice())
+    };
+  }
+
+  const usedThisSession = new Set();
+
+  while (gameState.questions.length < gameState.sessionLength && allKeys.length > 0) {
+    // Als de pot leeg is, opnieuw vullen en schudden
+    if (saved.pool.length === 0) {
+      saved.pool = shuffle(allKeys.slice());
+    }
+
+    let key = saved.pool.pop();
+
+    // Probeer dubbele sommen binnen dezelfde oefening te voorkomen
+    if (usedThisSession.has(key) && usedThisSession.size < allKeys.length) {
+      const alternativeIndex = saved.pool.findIndex(candidate => !usedThisSession.has(candidate));
+
+      if (alternativeIndex !== -1) {
+        saved.pool.unshift(key);
+        key = saved.pool.splice(alternativeIndex, 1)[0];
+      }
+    }
+
+    usedThisSession.add(key);
+
+    const [table, multiplier] = key.split('-').map(Number);
+    gameState.questions.push({
+      table,
+      multiplier,
+      answer: table * multiplier
+    });
+  }
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(saved));
+  } catch {}
 }
 
 function generateQuestionsSystematic() {
