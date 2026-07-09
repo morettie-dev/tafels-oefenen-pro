@@ -1,4 +1,4 @@
-const CACHE = 'tafels-v2';
+const CACHE = 'tafels-v3';
 const ASSETS = [
   './',
   './tafels-oefenen-pro.html',
